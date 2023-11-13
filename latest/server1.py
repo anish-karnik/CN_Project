@@ -5,6 +5,9 @@ class SimpleHandler(BaseHTTPRequestHandler):
         # Send a response header
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
+        if self.path.startswith('/dataA'):
+        	#self.send_header('cache-control', 'no-store')
+        	self.send_header('cache-control', 'max-age=5')
         self.end_headers()
 
         # Send the response content
