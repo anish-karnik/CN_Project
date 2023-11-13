@@ -41,6 +41,10 @@ class TinyLFUCache:
         del self.cache[min_key]
         del self.frequency[min_key]
 
+    def delete(self, key):
+        del self.cache[key]
+        del self.frequency[key]
+
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(process)s] [%(levelname)s] %(message)s")
 logg = logging.getLogger(__name__)
 
@@ -149,11 +153,34 @@ class Response:
 		except Exception as e:
 			self.protocol, self.status, self.status_str = ("", "", "")
 
+
+	def header(self):
+		data_split = self.data_split[1:]
+		Response_Header = dict()
+		for line in data_split:
+			if not line:
+				continue
+			broken_line = line.decode().split(":")
+			Response_Header[broken_line[0].lower()] = ":".join(broken_line[1:])
+
+		return Response_Header
+
+
 get_cache = TinyLFUCache(100)
 head_cache = TinyLFUCache(100)
 # post_cache = TinyLFUCache(100)
 turn = 0
 
+
+class DeletegetCacheEntry(threading.Thread):
+    def __init__(self, entry, timeout):
+        super().__init__()
+        self.entry = entry
+        self.timeout = timeout
+
+    def run(self):
+        time.sleep(self.timeout)
+        get_cache.delete(self.entry)
 
 class ConnectionHandle(threading.Thread):
 	def __init__(self, connection, client_addr):
@@ -170,7 +197,7 @@ class ConnectionHandle(threading.Thread):
 		request = Request(raw_request)
 
 		if request.protocol == Protocol.http20:
-			self.client_conn.send(Error.status_505)
+			self.client_conn.send(Error.status_505.encode('utf-8'))
 			self.client_conn.close()
 			return
 		if str(request.host) in Blocked_List:
@@ -179,7 +206,20 @@ class ConnectionHandle(threading.Thread):
 			logg.info(f"{request.method:<8} {request.path} {request.protocol} BLOCKED")
 			return
 
-		if request.method == Method.get:
+		request_headers = request.header()
+
+		#handling cache-control request header field
+		cached_response = True
+		if 'cache-control' in request_headers:
+			cache_control_parameters = request_headers['cache-control'].split(',')
+			for parameter in cache_control_parameters:
+				print(parameter)
+				if parameter.startswith('max-age'):
+					max_age = int(parameter.split('=')[1])
+				elif parameter == ' no-cache':
+					cached_response = False
+
+		if request.method == Method.get and cached_response:
 			try:
 				if get_cache.get(request.path):
 					print("Present in the CACHE !")
@@ -193,7 +233,7 @@ class ConnectionHandle(threading.Thread):
 				print(f"ConnectionAbortedError: {e}")
 				return
 
-		if request.method == Method.head:
+		if request.method == Method.head and cached_response:
 			try:
 				if head_cache.get(request.path):
 					print("Present in the CACHE !")
@@ -217,7 +257,7 @@ class ConnectionHandle(threading.Thread):
 				try:
 					self.server_conn1.connect(('127.0.0.1', 81))
 				except:
-					self.client_conn.send(Error.status_503)
+					self.client_conn.send(Error.status_503.encode('utf-8'))
 					self.client_conn.close()
 					return
 				turn = 1
@@ -232,7 +272,7 @@ class ConnectionHandle(threading.Thread):
 				try:
 					self.server_conn2.connect(('127.0.0.1', 82))
 				except:
-					self.client_conn.send(Error.status_503)
+					self.client_conn.send(Error.status_503.encode('utf-8'))
 					self.client_conn.close()
 					return
 				turn = 0
@@ -240,22 +280,8 @@ class ConnectionHandle(threading.Thread):
 				self.server_conn2.settimeout(5)
 				data = self.server_conn2.recv(max_size)
 				self.server_conn2.close()
-
-
 			if not data:
 				return
-
-
-			if request.method == Method.get:
-				get_cache.put(request.path, data)
-			if request.method == Method.head:
-				head_cache.put(request.path, data)
-
-
-			self.client_conn.send(data)
-			self.client_conn.close()
-			logg.info(f"{request.method:<8} {request.path} {request.protocol} SERVED FROM SERVER")
-			return
 
 		elif request.path == "/dataA" or request.path == "/dataA/":
 			self.server_conn1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -271,14 +297,6 @@ class ConnectionHandle(threading.Thread):
 			self.server_conn1.close()
 			if not data:
 				return
-			if request.method == Method.get:
-				get_cache.put(request.path, data)
-			if request.method == Method.head:
-				head_cache.put(request.path, data)
-			self.client_conn.send(data)
-			self.client_conn.close()
-			logg.info(f"{request.method:<8} {request.path} {request.protocol} SERVED FROM SERVER")
-			return
 
 		elif request.path == "/dataB" or request.path == "/dataB/":
 			self.server_conn2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -294,14 +312,6 @@ class ConnectionHandle(threading.Thread):
 			self.server_conn2.close()
 			if not data:
 				return
-			if request.method == Method.get:
-				get_cache.put(request.path, data)
-			if request.method == Method.head:
-				head_cache.put(request.path, data)
-			self.client_conn.send(data)
-			self.client_conn.close()
-			logg.info(f"{request.method:<8} {request.path} {request.protocol} SERVED FROM SERVER")
-			return
 
 		#else send error message to client and close connection. do something here if needed
 		else:
@@ -309,6 +319,28 @@ class ConnectionHandle(threading.Thread):
 			self.client_conn.close()
 			return
 
+		response = Response(data)
+		response_headers = response.header()
+		store_response = True
+		max_age = 0
+		if 'cache-control' in response_headers:
+			cache_control_parameters = response_headers['cache-control'].split(',')
+			for parameter in cache_control_parameters:
+				if parameter.startswith(' max-age'):
+					max_age = int(parameter.split('=')[1])
+				elif parameter == ' no-store':
+					store_response = False
+		if request.method == Method.get and store_response:
+			get_cache.put(request.path, data)
+		if request.method == Method.head and store_response:
+			head_cache.put(request.path, data)
+		if max_age > 0:
+			t = DeletegetCacheEntry(request.path, max_age)
+			t.start()
+		self.client_conn.send(data)
+		self.client_conn.close()
+		logg.info(f"{request.method:<8} {request.path} {request.protocol} SERVED FROM SERVER")
+		return
 
 
 	def __del__(self):
