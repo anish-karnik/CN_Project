@@ -244,7 +244,7 @@ class ConnectionHandle(threading.Thread):
 
 		#X-forwarded type of requests
 		if 'x-forwarded-host' in request_headers:
-			if request_headers['x-forwarded-for'] == 'localhost:8000':
+			if request_headers['x-forwarded-host'] == 'localhost:8000':
 				if 'x-forwarded-for' in request_headers:
 					raw_request = delete_field(raw_request, 'x-forwarded-for')
 					logg.info(f"X-Forwarded-For: {request_headers['x-forwarded-for']}")
@@ -361,7 +361,7 @@ class ConnectionHandle(threading.Thread):
 			try:
 				self.server_conn2.connect(('127.0.0.1', 82))
 			except:
-				self.client_conn.send(Error.status_503)
+				self.client_conn.send(Error.status_503.encode('utf-8'))
 				self.client_conn.close()
 				return
 			self.server_conn2.send(raw_request)
@@ -376,7 +376,7 @@ class ConnectionHandle(threading.Thread):
 			try:
 				self.server_conn3.connect(('127.0.0.1', 83))
 			except:
-				self.client_conn.send(Error.status_503)
+				self.client_conn.send(Error.status_503.encode('utf-8'))
 				self.client_conn.close()
 				return
 			self.server_conn3.send(raw_request)
@@ -411,11 +411,11 @@ class ConnectionHandle(threading.Thread):
 		if max_age > 0:
 			t = DeletegetCacheEntry(request.path, max_age)
 			t.start()
-		#self.client_conn.send(zipped_response(data))
-		if language!=' en':
-			self.client_conn.send(zipped_response(data))
-		else:
-			self.client_conn.send(data)
+		self.client_conn.send(data)
+		#if language!=' en':
+			#self.client_conn.send(zipped_response(data))
+		#else:
+			#self.client_conn.send(data)
 		self.client_conn.close()
 		logg.info(f"{request.method:<8} {request.path} {request.protocol} SERVED FROM SERVER")
 		return
