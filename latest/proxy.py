@@ -89,6 +89,16 @@ def change_path(raw_request, curr_path, to_add, function):
 		raw_request = re.sub(b' .*? ', (' ' + to_add + curr_path + ' ').encode('utf-8'), raw_request, count = 1)
 	return raw_request
 
+
+#function to delete a particular field in request header
+def delete_field(raw_request, field):
+	decoded_raw_request=raw_request.decode('utf-8')
+	pattern = re.compile(field+':[^\r\n]*\r\n', flags=re.IGNORECASE)
+	modified_raw_request_str = re.sub(pattern, '', decoded_raw_request)
+	modified_raw_request = modified_raw_request_str.encode('utf-8')
+	return modified_raw_request
+
+
 class Request:
 	def __init__(self, raw:bytes):
 		self.raw = raw
@@ -208,19 +218,26 @@ class ConnectionHandle(threading.Thread):
 
 		request_headers = request.header()
 
+		#X-forwarded type of requests
+		if 'x-forwarded-host' in request_headers:
+			if request_headers['x-forwarded-for'] == 'localhost:8000':
+				if 'x-forwarded-for' in request_headers:
+					raw_request = delete_field(raw_request, 'x-forwarded-for')
+					logg.info(f"X-Forwarded-For: {request_headers['x-forwarded-for']}")
+				if 'x-forwarded-proto' in request_headers:
+					raw_request = delete_field(raw_request, 'x-forwarded-proto')
+					logg.info(f"X-Forwarded-Proto: {request_headers['x-forwarded-proto']}")
+				# logg.info(f"X-Forwarded-Host: {request.header('x-forwarded-Host')}")
+				raw_request = delete_field(raw_request, 'x-forwarded-host')
+				logg.info(f"Requested Site: {request.path}")
+			else: 
+				logg.info(f"Not to be served by this Proxy")
+				self.client_conn.send(StaticResponse.block_response)
+				self.client_conn.close()
+				return
+
 		if ('accept-language' in request_headers):
-			decoded_raw_request=raw_request.decode('utf-8')
-
-			# pattern to match accept-language and its value
-			pattern = re.compile(r'accept-language:[^\r\n]*\r\n', flags=re.IGNORECASE)
-
-			# removing the matched pattern
-			modified_raw_request_str = re.sub(pattern, '', decoded_raw_request)
-
-			# converting the modified string back to bytes
-			modified_raw_request = modified_raw_request_str.encode('utf-8')
-
-			raw_request=modified_raw_request
+			raw_request = delete_field(raw_request, 'accept-language')
 
 		language = request_headers.get('accept-language', ' en')
 		language = ' en' if language.startswith(' en') else language
