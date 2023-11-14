@@ -224,7 +224,7 @@ class ConnectionHandle(threading.Thread):
 
 		language = request_headers.get('accept-language', ' en')
 		language = ' en' if language.startswith(' en') else language
-		print(language, '?????????????????????????????>>>>>>>>>>>>>>>>>>>>')
+
 		#handling cache-control request header field
 		cached_response = True
 		if 'cache-control' in request_headers:
@@ -347,7 +347,6 @@ class ConnectionHandle(threading.Thread):
 			if not data:
 				return
 
-		#else send error message to client and close connection. do something here if needed
 		else:
 			self.client_conn.send('not a valid path'.encode('utf-8'))
 			self.client_conn.close()
