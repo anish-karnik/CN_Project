@@ -226,7 +226,7 @@ class ConnectionHandle(threading.Thread):
 		language = ' en' if language.startswith(' en') else language
 
 		#handling cache-control request header field
-		cached_response = True
+		cached_response = language == ' en'
 		if 'cache-control' in request_headers:
 			cache_control_parameters = request_headers['cache-control'].split(',')
 			for parameter in cache_control_parameters:
@@ -300,8 +300,6 @@ class ConnectionHandle(threading.Thread):
 			if not data:
 				return
 
-
-
 		elif language == ' en' and (request.path == "/dataA" or request.path == "/dataA/"):
 			self.server_conn1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			try:
@@ -363,9 +361,11 @@ class ConnectionHandle(threading.Thread):
 					max_age = int(parameter.split('=')[1])
 				elif parameter == ' no-store':
 					store_response = False
-		if request.method == Method.get and store_response:
+		if language != ' en':
+			pass
+		elif request.method == Method.get and store_response:
 			get_cache.put(request.path, data)
-		if request.method == Method.head and store_response:
+		elif request.method == Method.head and store_response:
 			head_cache.put(request.path, data)
 		if max_age > 0:
 			t = DeletegetCacheEntry(request.path, max_age)
