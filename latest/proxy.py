@@ -3,6 +3,8 @@ import threading
 import select
 import time, re
 import logging
+import gzip
+import io
 
 class TinyLFUCache:
     def __init__(self, capacity):
@@ -90,13 +92,35 @@ def change_path(raw_request, curr_path, to_add, function):
 	return raw_request
 
 
-#function to delete a particular field in request header
+#function to delete a particular field in header
 def delete_field(raw_request, field):
 	decoded_raw_request=raw_request.decode('utf-8')
 	pattern = re.compile(field+':[^\r\n]*\r\n', flags=re.IGNORECASE)
 	modified_raw_request_str = re.sub(pattern, '', decoded_raw_request)
 	modified_raw_request = modified_raw_request_str.encode('utf-8')
 	return modified_raw_request
+
+#function to add a particular field in header
+def add_field(raw_request, field, value):
+	decoded_raw_request=raw_request.decode('utf-8')
+	pattern = re.compile('(\r\n\r\n)', flags=re.IGNORECASE)
+	modified_raw_request_str = re.sub(pattern, '\r\n'+field+': '+value+'\r\n\r\n', decoded_raw_request)
+	modified_raw_request = modified_raw_request_str.encode('utf-8')
+	return modified_raw_request
+
+#function to separate the header and body of the http request
+def separate_header_body(raw_request):
+	return raw_request.split(b'\r\n\r\n')
+
+#function to zip the data in the http response
+def zipped_response(raw_request):
+	header, body = separate_header_body(raw_request)
+	compressed_data = io.BytesIO()
+	with gzip.GzipFile(fileobj=compressed_data, mode='wb') as f:
+		f.write(body)
+	compressed_body = compressed_data.getvalue()
+	res = header + b'\r\n\r\n' + compressed_body
+	return add_field(res, 'Content-Encoding', 'gzip')
 
 
 class Request:
@@ -387,7 +411,11 @@ class ConnectionHandle(threading.Thread):
 		if max_age > 0:
 			t = DeletegetCacheEntry(request.path, max_age)
 			t.start()
-		self.client_conn.send(data)
+		#self.client_conn.send(zipped_response(data))
+		if language!=' en':
+			self.client_conn.send(zipped_response(data))
+		else:
+			self.client_conn.send(data)
 		self.client_conn.close()
 		logg.info(f"{request.method:<8} {request.path} {request.protocol} SERVED FROM SERVER")
 		return
